@@ -1,0 +1,160 @@
+"use client"
+
+import { useState, useEffect } from "react"
+import { SafeBalanceCards } from "@/components/safe-balance-cards"
+import { DailyEntryForm } from "@/components/daily-entry-form"
+import { BackSafeWithdrawalSection } from "@/components/back-safe-withdrawal"
+import { ReconciliationHistory } from "@/components/reconciliation-history"
+import { Button } from "@/components/ui/button"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import { Banknote, Moon, Sun, LogOut, User } from "lucide-react"
+import { getBalances } from "@/lib/cash-store"
+import { createClient } from "@/lib/supabase/client"
+import { useRouter } from "next/navigation"
+import type { DailyEntry, SafeBalances } from "@/lib/types"
+import type { User as SupabaseUser } from "@supabase/supabase-js"
+
+interface CashReconciliationDashboardProps {
+  user: SupabaseUser
+}
+
+export function CashReconciliationDashboard({ user }: CashReconciliationDashboardProps) {
+  const [balances, setBalances] = useState<SafeBalances>({
+    frontSafe: 0,
+    backSafe: 0,
+    lastUpdated: new Date().toISOString(),
+  })
+  const [refreshTrigger, setRefreshTrigger] = useState(0)
+  const [editingEntry, setEditingEntry] = useState<DailyEntry | null>(null)
+  const [isDark, setIsDark] = useState(false)
+  const [isLoaded, setIsLoaded] = useState(false)
+  const router = useRouter()
+
+  useEffect(() => {
+    setBalances(getBalances())
+    setIsLoaded(true)
+    const savedTheme = localStorage.getItem("theme")
+    if (savedTheme === "dark") {
+      setIsDark(true)
+      document.documentElement.classList.add("dark")
+    }
+  }, [])
+
+  const handleRefresh = () => {
+    setBalances(getBalances())
+    setRefreshTrigger((prev) => prev + 1)
+  }
+
+  const handleEdit = (entry: DailyEntry) => {
+    setEditingEntry(entry)
+    window.scrollTo({ top: 0, behavior: "smooth" })
+  }
+
+  const toggleTheme = () => {
+    const newIsDark = !isDark
+    setIsDark(newIsDark)
+    if (newIsDark) {
+      document.documentElement.classList.add("dark")
+      localStorage.setItem("theme", "dark")
+    } else {
+      document.documentElement.classList.remove("dark")
+      localStorage.setItem("theme", "light")
+    }
+  }
+
+  const handleSignOut = async () => {
+    const supabase = createClient()
+    await supabase.auth.signOut()
+    router.push("/")
+  }
+
+  if (!isLoaded) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="flex flex-col items-center gap-3">
+          <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+          <p className="text-sm text-muted-foreground">Loading...</p>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="min-h-screen bg-background bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-muted/50 via-background to-background">
+      <header className="border-b bg-card/80 backdrop-blur-sm sticky top-0 z-10 shadow-sm">
+        <div className="container mx-auto px-4 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <div className="p-2.5 bg-gradient-to-br from-primary to-primary/80 rounded-xl shadow-lg shadow-primary/20">
+              <Banknote className="h-6 w-6 text-primary-foreground" />
+            </div>
+            <div>
+              <h1 className="text-xl font-semibold tracking-tight">Cash Reconciliation</h1>
+              <p className="text-sm text-muted-foreground">Daily Safe Tracking</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={toggleTheme}
+              className="rounded-full h-10 w-10 transition-all hover:shadow-md bg-transparent"
+            >
+              {isDark ? <Sun className="h-[1.2rem] w-[1.2rem]" /> : <Moon className="h-[1.2rem] w-[1.2rem]" />}
+              <span className="sr-only">Toggle theme</span>
+            </Button>
+
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" className="gap-2 rounded-full px-4 bg-transparent">
+                  <User className="h-4 w-4" />
+                  <span className="hidden sm:inline max-w-[150px] truncate">{user.email}</span>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <div className="px-2 py-1.5">
+                  <p className="text-sm font-medium truncate">{user.email}</p>
+                  <p className="text-xs text-muted-foreground">Logged in</p>
+                </div>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={handleSignOut} className="text-destructive focus:text-destructive">
+                  <LogOut className="h-4 w-4 mr-2" />
+                  Sign out
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </div>
+      </header>
+
+      <main className="container mx-auto px-4 py-8 space-y-8 max-w-7xl">
+        <SafeBalanceCards
+          frontSafe={balances.frontSafe}
+          backSafe={balances.backSafe}
+          lastUpdated={balances.lastUpdated}
+        />
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          <div className="lg:col-span-2">
+            <DailyEntryForm
+              balances={balances}
+              onEntrySaved={handleRefresh}
+              editingEntry={editingEntry}
+              onCancelEdit={() => setEditingEntry(null)}
+            />
+          </div>
+          <div>
+            <BackSafeWithdrawalSection balances={balances} onWithdrawal={handleRefresh} />
+          </div>
+        </div>
+
+        <ReconciliationHistory onEdit={handleEdit} refreshTrigger={refreshTrigger} />
+      </main>
+    </div>
+  )
+}
