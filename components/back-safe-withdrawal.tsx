@@ -1,12 +1,13 @@
 "use client"
 
 import type React from "react"
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   Dialog,
   DialogContent,
@@ -15,26 +16,65 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
-import { ArrowUpFromLine, Plus, Minus } from "lucide-react"
-import type { BackSafeWithdrawal, SafeBalances } from "@/lib/types"
-import { saveWithdrawal, saveBalances, getWithdrawals } from "@/lib/cash-store"
+import { ArrowUpFromLine, Plus, Minus, ArrowDownToLine, TrendingUp, TrendingDown } from "lucide-react"
+import type { BackSafeWithdrawal, SafeBalances, BackSafeTransaction } from "@/lib/types"
+import { saveWithdrawal, saveBalances, getWithdrawals, getBackSafeTransactions, getEntries } from "@/lib/cash-store"
 
 interface BackSafeWithdrawalProps {
   balances: SafeBalances
   onWithdrawal: () => void
+  refreshTrigger?: number
 }
 
-export function BackSafeWithdrawalSection({ balances, onWithdrawal }: BackSafeWithdrawalProps) {
+export function BackSafeWithdrawalSection({ balances, onWithdrawal, refreshTrigger = 0 }: BackSafeWithdrawalProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [amount, setAmount] = useState("")
   const [reason, setReason] = useState("")
   const [withdrawals, setWithdrawals] = useState<BackSafeWithdrawal[]>([])
+  const [transactions, setTransactions] = useState<BackSafeTransaction[]>([])
   const [isLoaded, setIsLoaded] = useState(false)
+  const [activeTab, setActiveTab] = useState("all")
 
-  if (!isLoaded && typeof window !== "undefined") {
-    setWithdrawals(getWithdrawals())
-    setIsLoaded(true)
-  }
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      setWithdrawals(getWithdrawals())
+
+      // Build transactions list from entries (deposits) and withdrawals
+      const entries = getEntries()
+      const existingTransactions = getBackSafeTransactions()
+
+      // Create deposit transactions from entries that have toBackSafe > 0
+      const depositTransactions: BackSafeTransaction[] = entries
+        .filter((e) => e.toBackSafe > 0)
+        .map((e) => ({
+          id: `deposit-${e.id}`,
+          date: e.date,
+          amount: e.toBackSafe,
+          type: "deposit" as const,
+          reason: "Transfer from Front Safe",
+          fromEntryId: e.id,
+          createdAt: e.createdAt,
+        }))
+
+      // Create withdrawal transactions
+      const withdrawalTransactions: BackSafeTransaction[] = getWithdrawals().map((w) => ({
+        id: `withdrawal-${w.id}`,
+        date: w.date,
+        amount: w.amount,
+        type: "withdrawal" as const,
+        reason: w.reason,
+        createdAt: w.createdAt,
+      }))
+
+      // Combine and sort by date descending
+      const allTransactions = [...depositTransactions, ...withdrawalTransactions].sort(
+        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+      )
+
+      setTransactions(allTransactions)
+      setIsLoaded(true)
+    }
+  }, [refreshTrigger])
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat("en-US", {
@@ -44,7 +84,7 @@ export function BackSafeWithdrawalSection({ balances, onWithdrawal }: BackSafeWi
   }
 
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString("en-US", {
+    return new Date(dateString + "T00:00:00").toLocaleDateString("en-US", {
       month: "short",
       day: "numeric",
     })
@@ -84,7 +124,18 @@ export function BackSafeWithdrawalSection({ balances, onWithdrawal }: BackSafeWi
     onWithdrawal()
   }
 
-  const recentWithdrawals = withdrawals.slice(0, 5)
+  const filteredTransactions =
+    activeTab === "all"
+      ? transactions
+      : activeTab === "deposits"
+        ? transactions.filter((t) => t.type === "deposit")
+        : transactions.filter((t) => t.type === "withdrawal")
+
+  const recentTransactions = filteredTransactions.slice(0, 8)
+
+  // Calculate totals
+  const totalDeposits = transactions.filter((t) => t.type === "deposit").reduce((sum, t) => sum + t.amount, 0)
+  const totalWithdrawals = transactions.filter((t) => t.type === "withdrawal").reduce((sum, t) => sum + t.amount, 0)
 
   return (
     <Card className="border-0 shadow-lg h-full">
@@ -156,31 +207,90 @@ export function BackSafeWithdrawalSection({ balances, onWithdrawal }: BackSafeWi
             </DialogContent>
           </Dialog>
         </div>
-      </CardHeader>
-      <CardContent>
-        <div className="space-y-2">
-          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">Recent Withdrawals</p>
-          {recentWithdrawals.length > 0 ? (
-            <div className="space-y-2">
-              {recentWithdrawals.map((w) => (
-                <div key={w.id} className="flex items-center justify-between p-3 bg-muted/30 rounded-lg">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">{w.reason}</p>
-                    <p className="text-xs text-muted-foreground">{formatDate(w.date)}</p>
-                  </div>
-                  <p className="font-mono font-medium text-destructive ml-3">-{formatCurrency(w.amount)}</p>
-                </div>
-              ))}
+
+        <div className="grid grid-cols-2 gap-3 mt-4">
+          <div className="p-3 bg-success/10 rounded-lg">
+            <div className="flex items-center gap-2 text-success">
+              <TrendingUp className="h-4 w-4" />
+              <span className="text-xs font-medium">Total In</span>
             </div>
-          ) : (
-            <div className="text-center py-8">
-              <div className="p-3 bg-muted/30 rounded-full w-fit mx-auto mb-3">
-                <Plus className="h-5 w-5 text-muted-foreground" />
-              </div>
-              <p className="text-sm text-muted-foreground">No withdrawals yet</p>
+            <p className="font-mono font-semibold mt-1">{formatCurrency(totalDeposits)}</p>
+          </div>
+          <div className="p-3 bg-destructive/10 rounded-lg">
+            <div className="flex items-center gap-2 text-destructive">
+              <TrendingDown className="h-4 w-4" />
+              <span className="text-xs font-medium">Total Out</span>
             </div>
-          )}
+            <p className="font-mono font-semibold mt-1">{formatCurrency(totalWithdrawals)}</p>
+          </div>
         </div>
+      </CardHeader>
+
+      <CardContent>
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+          <TabsList className="grid w-full grid-cols-3 mb-4">
+            <TabsTrigger value="all" className="text-xs">
+              All
+            </TabsTrigger>
+            <TabsTrigger value="deposits" className="text-xs">
+              Deposits
+            </TabsTrigger>
+            <TabsTrigger value="withdrawals" className="text-xs">
+              Withdrawals
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value={activeTab} className="mt-0">
+            {recentTransactions.length > 0 ? (
+              <div className="space-y-2">
+                {recentTransactions.map((t) => (
+                  <div key={t.id} className="flex items-center justify-between p-3 bg-muted/30 rounded-lg">
+                    <div className="flex items-center gap-3 flex-1 min-w-0">
+                      <div
+                        className={`p-1.5 rounded-full ${t.type === "deposit" ? "bg-success/20" : "bg-destructive/20"}`}
+                      >
+                        {t.type === "deposit" ? (
+                          <ArrowDownToLine className="h-3.5 w-3.5 text-success" />
+                        ) : (
+                          <ArrowUpFromLine className="h-3.5 w-3.5 text-destructive" />
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">{t.reason}</p>
+                        <p className="text-xs text-muted-foreground">{formatDate(t.date)}</p>
+                      </div>
+                    </div>
+                    <p
+                      className={`font-mono font-medium ml-3 ${t.type === "deposit" ? "text-success" : "text-destructive"}`}
+                    >
+                      {t.type === "deposit" ? "+" : "-"}
+                      {formatCurrency(t.amount)}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-8">
+                <div className="p-3 bg-muted/30 rounded-full w-fit mx-auto mb-3">
+                  {activeTab === "deposits" ? (
+                    <ArrowDownToLine className="h-5 w-5 text-muted-foreground" />
+                  ) : activeTab === "withdrawals" ? (
+                    <ArrowUpFromLine className="h-5 w-5 text-muted-foreground" />
+                  ) : (
+                    <Plus className="h-5 w-5 text-muted-foreground" />
+                  )}
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  {activeTab === "deposits"
+                    ? "No deposits yet"
+                    : activeTab === "withdrawals"
+                      ? "No withdrawals yet"
+                      : "No transactions yet"}
+                </p>
+              </div>
+            )}
+          </TabsContent>
+        </Tabs>
       </CardContent>
     </Card>
   )

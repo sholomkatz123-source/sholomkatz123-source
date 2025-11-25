@@ -5,7 +5,9 @@ import { SafeBalanceCards } from "@/components/safe-balance-cards"
 import { DailyEntryForm } from "@/components/daily-entry-form"
 import { BackSafeWithdrawalSection } from "@/components/back-safe-withdrawal"
 import { ReconciliationHistory } from "@/components/reconciliation-history"
+import { MonthlyArchives } from "@/components/monthly-archives"
 import { Button } from "@/components/ui/button"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -13,7 +15,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { Banknote, Moon, Sun, LogOut, User } from "lucide-react"
+import { Banknote, Moon, Sun, LogOut, User, LayoutDashboard, Archive } from "lucide-react"
 import { getBalances } from "@/lib/cash-store"
 import { createClient } from "@/lib/supabase/client"
 import { useRouter } from "next/navigation"
@@ -34,6 +36,7 @@ export function CashReconciliationDashboard({ user }: CashReconciliationDashboar
   const [editingEntry, setEditingEntry] = useState<DailyEntry | null>(null)
   const [isDark, setIsDark] = useState(false)
   const [isLoaded, setIsLoaded] = useState(false)
+  const [activeTab, setActiveTab] = useState("dashboard")
   const router = useRouter()
 
   useEffect(() => {
@@ -53,6 +56,7 @@ export function CashReconciliationDashboard({ user }: CashReconciliationDashboar
 
   const handleEdit = (entry: DailyEntry) => {
     setEditingEntry(entry)
+    setActiveTab("dashboard")
     window.scrollTo({ top: 0, behavior: "smooth" })
   }
 
@@ -133,27 +137,50 @@ export function CashReconciliationDashboard({ user }: CashReconciliationDashboar
       </header>
 
       <main className="container mx-auto px-4 py-8 space-y-8 max-w-7xl">
-        <SafeBalanceCards
-          frontSafe={balances.frontSafe}
-          backSafe={balances.backSafe}
-          lastUpdated={balances.lastUpdated}
-        />
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+          <TabsList className="mb-6">
+            <TabsTrigger value="dashboard" className="gap-2">
+              <LayoutDashboard className="h-4 w-4" />
+              Dashboard
+            </TabsTrigger>
+            <TabsTrigger value="archives" className="gap-2">
+              <Archive className="h-4 w-4" />
+              Monthly Archives
+            </TabsTrigger>
+          </TabsList>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          <div className="lg:col-span-2">
-            <DailyEntryForm
-              balances={balances}
-              onEntrySaved={handleRefresh}
-              editingEntry={editingEntry}
-              onCancelEdit={() => setEditingEntry(null)}
+          <TabsContent value="dashboard" className="space-y-8 mt-0">
+            <SafeBalanceCards
+              frontSafe={balances.frontSafe}
+              backSafe={balances.backSafe}
+              lastUpdated={balances.lastUpdated}
             />
-          </div>
-          <div>
-            <BackSafeWithdrawalSection balances={balances} onWithdrawal={handleRefresh} />
-          </div>
-        </div>
 
-        <ReconciliationHistory onEdit={handleEdit} refreshTrigger={refreshTrigger} />
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+              <div className="lg:col-span-2">
+                <DailyEntryForm
+                  balances={balances}
+                  onEntrySaved={handleRefresh}
+                  editingEntry={editingEntry}
+                  onCancelEdit={() => setEditingEntry(null)}
+                />
+              </div>
+              <div>
+                <BackSafeWithdrawalSection
+                  balances={balances}
+                  onWithdrawal={handleRefresh}
+                  refreshTrigger={refreshTrigger}
+                />
+              </div>
+            </div>
+
+            <ReconciliationHistory onEdit={handleEdit} refreshTrigger={refreshTrigger} />
+          </TabsContent>
+
+          <TabsContent value="archives" className="mt-0">
+            <MonthlyArchives refreshTrigger={refreshTrigger} onRefresh={handleRefresh} />
+          </TabsContent>
+        </Tabs>
       </main>
     </div>
   )

@@ -26,3 +26,25 @@ export interface SafeBalances {
   backSafe: number
   lastUpdated: string
 }
+
+export interface MonthlyArchive {
+  month: string // Format: "YYYY-MM"
+  startingFrontSafe: number
+  startingBackSafe: number
+  endingFrontSafe: number
+  endingBackSafe: number
+  entries: DailyEntry[]
+  withdrawals: BackSafeWithdrawal[]
+  isClosed: boolean
+  closedAt?: string
+}
+
+export interface BackSafeTransaction {
+  id: string
+  date: string
+  amount: number
+  type: "deposit" | "withdrawal"
+  reason?: string
+  fromEntryId?: string // Links to DailyEntry if it's a deposit from front safe
+  createdAt: string
+}
