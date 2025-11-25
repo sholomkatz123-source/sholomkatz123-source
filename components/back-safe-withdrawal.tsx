@@ -16,9 +16,19 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
-import { ArrowUpFromLine, Plus, Minus, ArrowDownToLine, TrendingUp, TrendingDown } from "lucide-react"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
+import { ArrowUpFromLine, Plus, Minus, ArrowDownToLine, TrendingUp, TrendingDown, Pencil, Trash2 } from "lucide-react"
 import type { BackSafeWithdrawal, SafeBalances, BackSafeTransaction } from "@/lib/types"
-import { saveWithdrawal, saveBalances, getWithdrawals, getBackSafeTransactions, getEntries } from "@/lib/cash-store"
+import { saveWithdrawal, saveBalances, getWithdrawals, getEntries, deleteWithdrawal } from "@/lib/cash-store"
 
 interface BackSafeWithdrawalProps {
   balances: SafeBalances
@@ -34,16 +44,19 @@ export function BackSafeWithdrawalSection({ balances, onWithdrawal, refreshTrigg
   const [transactions, setTransactions] = useState<BackSafeTransaction[]>([])
   const [isLoaded, setIsLoaded] = useState(false)
   const [activeTab, setActiveTab] = useState("all")
+  const [editingWithdrawal, setEditingWithdrawal] = useState<BackSafeWithdrawal | null>(null)
+  const [isEditOpen, setIsEditOpen] = useState(false)
+  const [editAmount, setEditAmount] = useState("")
+  const [editReason, setEditReason] = useState("")
+  const [deleteId, setDeleteId] = useState<string | null>(null)
+  const [originalAmount, setOriginalAmount] = useState(0)
 
   useEffect(() => {
     if (typeof window !== "undefined") {
       setWithdrawals(getWithdrawals())
 
-      // Build transactions list from entries (deposits) and withdrawals
       const entries = getEntries()
-      const existingTransactions = getBackSafeTransactions()
 
-      // Create deposit transactions from entries that have toBackSafe > 0
       const depositTransactions: BackSafeTransaction[] = entries
         .filter((e) => e.toBackSafe > 0)
         .map((e) => ({
@@ -56,7 +69,6 @@ export function BackSafeWithdrawalSection({ balances, onWithdrawal, refreshTrigg
           createdAt: e.createdAt,
         }))
 
-      // Create withdrawal transactions
       const withdrawalTransactions: BackSafeTransaction[] = getWithdrawals().map((w) => ({
         id: `withdrawal-${w.id}`,
         date: w.date,
@@ -64,9 +76,9 @@ export function BackSafeWithdrawalSection({ balances, onWithdrawal, refreshTrigg
         type: "withdrawal" as const,
         reason: w.reason,
         createdAt: w.createdAt,
+        withdrawalId: w.id,
       }))
 
-      // Combine and sort by date descending
       const allTransactions = [...depositTransactions, ...withdrawalTransactions].sort(
         (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
       )
@@ -124,6 +136,70 @@ export function BackSafeWithdrawalSection({ balances, onWithdrawal, refreshTrigg
     onWithdrawal()
   }
 
+  const handleEditClick = (withdrawalId: string) => {
+    const withdrawal = withdrawals.find((w) => w.id === withdrawalId)
+    if (withdrawal) {
+      setEditingWithdrawal(withdrawal)
+      setEditAmount(withdrawal.amount.toString())
+      setEditReason(withdrawal.reason)
+      setOriginalAmount(withdrawal.amount)
+      setIsEditOpen(true)
+    }
+  }
+
+  const handleEditSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!editingWithdrawal) return
+
+    const newAmount = Number.parseFloat(editAmount) || 0
+    const amountDifference = newAmount - originalAmount
+
+    if (amountDifference > balances.backSafe) {
+      alert("Cannot withdraw more than the current back safe balance")
+      return
+    }
+
+    const updatedWithdrawal: BackSafeWithdrawal = {
+      ...editingWithdrawal,
+      amount: newAmount,
+      reason: editReason,
+    }
+
+    saveWithdrawal(updatedWithdrawal)
+
+    const newBalances: SafeBalances = {
+      ...balances,
+      backSafe: balances.backSafe - amountDifference,
+      lastUpdated: new Date().toISOString(),
+    }
+    saveBalances(newBalances)
+
+    setIsEditOpen(false)
+    setEditingWithdrawal(null)
+    setEditAmount("")
+    setEditReason("")
+    onWithdrawal()
+  }
+
+  const handleDelete = () => {
+    if (!deleteId) return
+
+    const withdrawal = withdrawals.find((w) => w.id === deleteId)
+    if (withdrawal) {
+      deleteWithdrawal(deleteId)
+
+      const newBalances: SafeBalances = {
+        ...balances,
+        backSafe: balances.backSafe + withdrawal.amount,
+        lastUpdated: new Date().toISOString(),
+      }
+      saveBalances(newBalances)
+
+      setDeleteId(null)
+      onWithdrawal()
+    }
+  }
+
   const filteredTransactions =
     activeTab === "all"
       ? transactions
@@ -133,7 +209,6 @@ export function BackSafeWithdrawalSection({ balances, onWithdrawal, refreshTrigg
 
   const recentTransactions = filteredTransactions.slice(0, 8)
 
-  // Calculate totals
   const totalDeposits = transactions.filter((t) => t.type === "deposit").reduce((sum, t) => sum + t.amount, 0)
   const totalWithdrawals = transactions.filter((t) => t.type === "withdrawal").reduce((sum, t) => sum + t.amount, 0)
 
@@ -244,7 +319,10 @@ export function BackSafeWithdrawalSection({ balances, onWithdrawal, refreshTrigg
             {recentTransactions.length > 0 ? (
               <div className="space-y-2">
                 {recentTransactions.map((t) => (
-                  <div key={t.id} className="flex items-center justify-between p-3 bg-muted/30 rounded-lg">
+                  <div
+                    key={t.id}
+                    className="group flex items-center justify-between p-3 bg-muted/30 rounded-lg hover:bg-muted/50 transition-colors"
+                  >
                     <div className="flex items-center gap-3 flex-1 min-w-0">
                       <div
                         className={`p-1.5 rounded-full ${t.type === "deposit" ? "bg-success/20" : "bg-destructive/20"}`}
@@ -260,12 +338,34 @@ export function BackSafeWithdrawalSection({ balances, onWithdrawal, refreshTrigg
                         <p className="text-xs text-muted-foreground">{formatDate(t.date)}</p>
                       </div>
                     </div>
-                    <p
-                      className={`font-mono font-medium ml-3 ${t.type === "deposit" ? "text-success" : "text-destructive"}`}
-                    >
-                      {t.type === "deposit" ? "+" : "-"}
-                      {formatCurrency(t.amount)}
-                    </p>
+                    <div className="flex items-center gap-2">
+                      <p
+                        className={`font-mono font-medium ${t.type === "deposit" ? "text-success" : "text-destructive"}`}
+                      >
+                        {t.type === "deposit" ? "+" : "-"}
+                        {formatCurrency(t.amount)}
+                      </p>
+                      {t.type === "withdrawal" && t.withdrawalId && (
+                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7"
+                            onClick={() => handleEditClick(t.withdrawalId!)}
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-destructive hover:text-destructive"
+                            onClick={() => setDeleteId(t.withdrawalId!)}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -291,6 +391,74 @@ export function BackSafeWithdrawalSection({ balances, onWithdrawal, refreshTrigg
             )}
           </TabsContent>
         </Tabs>
+
+        <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Edit Withdrawal</DialogTitle>
+              <DialogDescription>Update the withdrawal details below.</DialogDescription>
+            </DialogHeader>
+            <form onSubmit={handleEditSubmit} className="space-y-4 pt-2">
+              <div className="space-y-2">
+                <Label htmlFor="editAmount">Amount</Label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">$</span>
+                  <Input
+                    id="editAmount"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    placeholder="0.00"
+                    value={editAmount}
+                    onChange={(e) => setEditAmount(e.target.value)}
+                    required
+                    className="pl-7 font-mono h-11"
+                  />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="editReason">Reason for Withdrawal</Label>
+                <Textarea
+                  id="editReason"
+                  placeholder="e.g., Bank deposit, Change for register..."
+                  value={editReason}
+                  onChange={(e) => setEditReason(e.target.value)}
+                  required
+                  rows={3}
+                  className="resize-none"
+                />
+              </div>
+              <div className="flex gap-3 pt-2">
+                <Button type="submit" className="flex-1 h-11">
+                  Save Changes
+                </Button>
+                <Button type="button" variant="outline" onClick={() => setIsEditOpen(false)} className="h-11">
+                  Cancel
+                </Button>
+              </div>
+            </form>
+          </DialogContent>
+        </Dialog>
+
+        <AlertDialog open={!!deleteId} onOpenChange={(open) => !open && setDeleteId(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete Withdrawal</AlertDialogTitle>
+              <AlertDialogDescription>
+                Are you sure you want to delete this withdrawal? The amount will be added back to the back safe balance.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handleDelete}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              >
+                Delete
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </CardContent>
     </Card>
   )

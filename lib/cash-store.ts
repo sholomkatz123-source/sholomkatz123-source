@@ -28,6 +28,36 @@ export function deleteEntry(id: string): void {
   localStorage.setItem(ENTRIES_KEY, JSON.stringify(entries))
 }
 
+export function approveEntry(id: string, approvalNote: string): void {
+  const entries = getEntries()
+  const entryIndex = entries.findIndex((e) => e.id === id)
+  if (entryIndex >= 0) {
+    entries[entryIndex] = {
+      ...entries[entryIndex],
+      manuallyApproved: true,
+      approvalNote,
+      approvedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    }
+    localStorage.setItem(ENTRIES_KEY, JSON.stringify(entries))
+  }
+}
+
+export function removeApproval(id: string): void {
+  const entries = getEntries()
+  const entryIndex = entries.findIndex((e) => e.id === id)
+  if (entryIndex >= 0) {
+    entries[entryIndex] = {
+      ...entries[entryIndex],
+      manuallyApproved: false,
+      approvalNote: undefined,
+      approvedAt: undefined,
+      updatedAt: new Date().toISOString(),
+    }
+    localStorage.setItem(ENTRIES_KEY, JSON.stringify(entries))
+  }
+}
+
 export function getWithdrawals(): BackSafeWithdrawal[] {
   if (typeof window === "undefined") return []
   const data = localStorage.getItem(WITHDRAWALS_KEY)
@@ -36,7 +66,17 @@ export function getWithdrawals(): BackSafeWithdrawal[] {
 
 export function saveWithdrawal(withdrawal: BackSafeWithdrawal): void {
   const withdrawals = getWithdrawals()
-  withdrawals.unshift(withdrawal)
+  const existingIndex = withdrawals.findIndex((w) => w.id === withdrawal.id)
+  if (existingIndex >= 0) {
+    withdrawals[existingIndex] = withdrawal
+  } else {
+    withdrawals.unshift(withdrawal)
+  }
+  localStorage.setItem(WITHDRAWALS_KEY, JSON.stringify(withdrawals))
+}
+
+export function deleteWithdrawal(id: string): void {
+  const withdrawals = getWithdrawals().filter((w) => w.id !== id)
   localStorage.setItem(WITHDRAWALS_KEY, JSON.stringify(withdrawals))
 }
 

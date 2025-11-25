@@ -9,6 +9,9 @@ export interface DailyEntry {
   difference: number
   isBalanced: boolean
   notes?: string
+  manuallyApproved?: boolean
+  approvalNote?: string
+  approvedAt?: string
   createdAt: string
   updatedAt: string
 }
@@ -46,5 +49,6 @@ export interface BackSafeTransaction {
   type: "deposit" | "withdrawal"
   reason?: string
   fromEntryId?: string // Links to DailyEntry if it's a deposit from front safe
+  withdrawalId?: string // Links to BackSafeWithdrawal if it's a withdrawal
   createdAt: string
 }
