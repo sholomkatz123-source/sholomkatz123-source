@@ -82,14 +82,16 @@ export function DailyEntryForm({ balances, onEntrySaved, editingEntry, onCancelE
       updatedAt: new Date().toISOString(),
     }
 
-    await saveEntry(entry)
+    const isEditing = !!editingEntry
+    const previousToBackSafe = editingEntry?.toBackSafe || 0
+    await saveEntry(entry, isEditing, previousToBackSafe)
 
-    const newBalances: SafeBalances = {
+    // saveBalances is now a no-op since balances are calculated from transactions
+    await saveBalances({
       frontSafe: leftInFrontNum,
       backSafe: balances.backSafe + toBackSafeNum,
       lastUpdated: new Date().toISOString(),
-    }
-    await saveBalances(newBalances)
+    })
 
     setCashIn("")
     setDeposited("")

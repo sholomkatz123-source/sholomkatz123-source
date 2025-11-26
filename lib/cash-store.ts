@@ -47,7 +47,7 @@ export async function getEntries(): Promise<DailyEntry[]> {
   )
 }
 
-export async function saveEntry(entry: DailyEntry): Promise<void> {
+export async function saveEntry(entry: DailyEntry, isEditing = false, previousToBackSafe = 0): Promise<void> {
   const user = await getCurrentUser()
   if (!user) return
 
@@ -68,12 +68,36 @@ export async function saveEntry(entry: DailyEntry): Promise<void> {
     updated_at: new Date().toISOString(),
   })
 
-  if (error) console.error("Error saving entry:", error)
+  if (error) {
+    console.error("Error saving entry:", error)
+    return
+  }
+
+  // Handle back safe deposit transaction
+  if (isEditing) {
+    // Delete existing deposit transaction for this entry
+    await supabase.from("back_safe_transactions").delete().eq("entry_id", entry.id).eq("user_id", user.id)
+  }
+
+  // Create deposit transaction if toBackSafe > 0
+  if (entry.toBackSafe > 0) {
+    await saveBackSafeTransaction({
+      id: crypto.randomUUID(),
+      date: entry.date,
+      type: "deposit",
+      amount: entry.toBackSafe,
+      reason: "Transfer from Front Safe",
+      fromEntryId: entry.id,
+      createdAt: new Date().toISOString(),
+    })
+  }
 }
 
 export async function deleteEntry(id: string): Promise<void> {
   const user = await getCurrentUser()
   if (!user) return
+
+  await supabase.from("back_safe_transactions").delete().eq("entry_id", id).eq("user_id", user.id)
 
   const { error } = await supabase.from("daily_entries").delete().eq("id", id).eq("user_id", user.id)
 
@@ -173,12 +197,12 @@ export async function deleteWithdrawal(id: string): Promise<void> {
   const user = await getCurrentUser()
   if (!user) return
 
+  // Delete associated transaction first
+  await supabase.from("back_safe_transactions").delete().eq("withdrawal_id", id).eq("user_id", user.id)
+
   const { error } = await supabase.from("back_safe_withdrawals").delete().eq("id", id).eq("user_id", user.id)
 
   if (error) console.error("Error deleting withdrawal:", error)
-
-  // Delete associated transaction
-  await supabase.from("back_safe_transactions").delete().eq("withdrawal_id", id)
 }
 
 export async function updateWithdrawal(id: string, amount: number, reason: string): Promise<void> {
@@ -192,6 +216,12 @@ export async function updateWithdrawal(id: string, amount: number, reason: strin
     .eq("user_id", user.id)
 
   if (error) console.error("Error updating withdrawal:", error)
+
+  await supabase
+    .from("back_safe_transactions")
+    .update({ amount, reason })
+    .eq("withdrawal_id", id)
+    .eq("user_id", user.id)
 }
 
 export async function getBalances(): Promise<SafeBalances> {
@@ -204,17 +234,13 @@ export async function getBalances(): Promise<SafeBalances> {
     }
   }
 
-  const [entriesData, withdrawalsData, transactionsData] = await Promise.all([
-    getEntries(),
-    getWithdrawals(),
-    getBackSafeTransactions(),
-  ])
+  const [entriesData, transactionsData] = await Promise.all([getEntries(), getBackSafeTransactions()])
 
   // Calculate front safe from latest entry
   const latestEntry = entriesData[0]
   const frontSafe = latestEntry?.leftInFront ?? 0
 
-  // Calculate back safe from transactions
+  // Calculate back safe from transactions table
   let backSafe = 0
   transactionsData.forEach((t) => {
     if (t.type === "deposit") backSafe += t.amount

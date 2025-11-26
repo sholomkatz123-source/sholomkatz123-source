@@ -32,9 +32,9 @@ import {
   saveWithdrawal,
   saveBalances,
   getWithdrawals,
-  getEntries,
   deleteWithdrawal,
   updateWithdrawal,
+  getBackSafeTransactions,
 } from "@/lib/cash-store"
 
 interface BackSafeWithdrawalProps {
@@ -60,37 +60,12 @@ export function BackSafeWithdrawalSection({ balances, onWithdrawal, refreshTrigg
 
   useEffect(() => {
     const loadData = async () => {
-      const withdrawalsData = await getWithdrawals()
-      const entriesData = await getEntries()
+      const [withdrawalsData, transactionsData] = await Promise.all([getWithdrawals(), getBackSafeTransactions()])
+
       setWithdrawals(withdrawalsData)
-
-      const depositTransactions: BackSafeTransaction[] = entriesData
-        .filter((e) => e.toBackSafe > 0)
-        .map((e) => ({
-          id: `deposit-${e.id}`,
-          date: e.date,
-          amount: e.toBackSafe,
-          type: "deposit" as const,
-          reason: "Transfer from Front Safe",
-          fromEntryId: e.id,
-          createdAt: e.createdAt,
-        }))
-
-      const withdrawalTransactions: BackSafeTransaction[] = withdrawalsData.map((w) => ({
-        id: `withdrawal-${w.id}`,
-        date: w.date,
-        amount: w.amount,
-        type: "withdrawal" as const,
-        reason: w.reason,
-        createdAt: w.createdAt,
-        withdrawalId: w.id,
-      }))
-
-      const allTransactions = [...depositTransactions, ...withdrawalTransactions].sort(
-        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+      setTransactions(
+        transactionsData.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()),
       )
-
-      setTransactions(allTransactions)
       setIsLoaded(true)
     }
 
@@ -141,8 +116,6 @@ export function BackSafeWithdrawalSection({ balances, onWithdrawal, refreshTrigg
     setAmount("")
     setReason("")
     setIsOpen(false)
-    const updated = await getWithdrawals()
-    setWithdrawals(updated)
     onWithdrawal()
   }
 
@@ -188,20 +161,9 @@ export function BackSafeWithdrawalSection({ balances, onWithdrawal, refreshTrigg
   const handleDelete = async () => {
     if (!deleteId) return
 
-    const withdrawal = withdrawals.find((w) => w.id === deleteId)
-    if (withdrawal) {
-      await deleteWithdrawal(deleteId)
-
-      const newBalances: SafeBalances = {
-        ...balances,
-        backSafe: balances.backSafe + withdrawal.amount,
-        lastUpdated: new Date().toISOString(),
-      }
-      await saveBalances(newBalances)
-
-      setDeleteId(null)
-      onWithdrawal()
-    }
+    await deleteWithdrawal(deleteId)
+    setDeleteId(null)
+    onWithdrawal()
   }
 
   const filteredTransactions =
