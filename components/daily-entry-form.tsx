@@ -10,7 +10,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { CheckCircle2, AlertTriangle, Calculator, Save, X } from "lucide-react"
 import type { DailyEntry, SafeBalances } from "@/lib/types"
-import { calculateExpectedFrontSafe, getPreviousDayBalance, saveEntry, saveBalances } from "@/lib/cash-store"
+import { getPreviousDayBalance, saveEntry, saveBalances } from "@/lib/cash-store"
 
 interface DailyEntryFormProps {
   balances: SafeBalances
@@ -29,19 +29,23 @@ export function DailyEntryForm({ balances, onEntrySaved, editingEntry, onCancelE
   const [previousBalance, setPreviousBalance] = useState(0)
 
   useEffect(() => {
-    if (editingEntry) {
-      setDate(editingEntry.date)
-      setCashIn(editingEntry.cashIn.toString())
-      setDeposited(editingEntry.deposited.toString())
-      setToBackSafe(editingEntry.toBackSafe.toString())
-      setLeftInFront(editingEntry.leftInFront.toString())
-      setNotes(editingEntry.notes || "")
-      setPreviousBalance(
-        editingEntry.expectedFrontSafe - editingEntry.cashIn + editingEntry.deposited + editingEntry.toBackSafe,
-      )
-    } else {
-      setPreviousBalance(getPreviousDayBalance())
+    const loadPreviousBalance = async () => {
+      if (editingEntry) {
+        setDate(editingEntry.date)
+        setCashIn(editingEntry.cashIn.toString())
+        setDeposited(editingEntry.deposited.toString())
+        setToBackSafe(editingEntry.toBackSafe.toString())
+        setLeftInFront(editingEntry.leftInFront.toString())
+        setNotes(editingEntry.notes || "")
+        setPreviousBalance(
+          editingEntry.expectedFrontSafe - editingEntry.cashIn + editingEntry.deposited + editingEntry.toBackSafe,
+        )
+      } else {
+        const balance = await getPreviousDayBalance()
+        setPreviousBalance(balance)
+      }
     }
+    loadPreviousBalance()
   }, [editingEntry])
 
   const cashInNum = Number.parseFloat(cashIn) || 0
@@ -49,7 +53,7 @@ export function DailyEntryForm({ balances, onEntrySaved, editingEntry, onCancelE
   const toBackSafeNum = Number.parseFloat(toBackSafe) || 0
   const leftInFrontNum = Number.parseFloat(leftInFront) || 0
 
-  const expectedFrontSafe = calculateExpectedFrontSafe(previousBalance, cashInNum, depositedNum, toBackSafeNum)
+  const expectedFrontSafe = previousBalance + cashInNum - depositedNum - toBackSafeNum
   const difference = leftInFrontNum - expectedFrontSafe
   const isBalanced = Math.abs(difference) < 0.01
 
@@ -60,7 +64,7 @@ export function DailyEntryForm({ balances, onEntrySaved, editingEntry, onCancelE
     }).format(amount)
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
     const entry: DailyEntry = {
@@ -78,14 +82,14 @@ export function DailyEntryForm({ balances, onEntrySaved, editingEntry, onCancelE
       updatedAt: new Date().toISOString(),
     }
 
-    saveEntry(entry)
+    await saveEntry(entry)
 
     const newBalances: SafeBalances = {
       frontSafe: leftInFrontNum,
       backSafe: balances.backSafe + toBackSafeNum,
       lastUpdated: new Date().toISOString(),
     }
-    saveBalances(newBalances)
+    await saveBalances(newBalances)
 
     setCashIn("")
     setDeposited("")

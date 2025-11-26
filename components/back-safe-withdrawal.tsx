@@ -28,7 +28,14 @@ import {
 } from "@/components/ui/alert-dialog"
 import { ArrowUpFromLine, Plus, Minus, ArrowDownToLine, TrendingUp, TrendingDown, Pencil, Trash2 } from "lucide-react"
 import type { BackSafeWithdrawal, SafeBalances, BackSafeTransaction } from "@/lib/types"
-import { saveWithdrawal, saveBalances, getWithdrawals, getEntries, deleteWithdrawal } from "@/lib/cash-store"
+import {
+  saveWithdrawal,
+  saveBalances,
+  getWithdrawals,
+  getEntries,
+  deleteWithdrawal,
+  updateWithdrawal,
+} from "@/lib/cash-store"
 
 interface BackSafeWithdrawalProps {
   balances: SafeBalances
@@ -52,12 +59,12 @@ export function BackSafeWithdrawalSection({ balances, onWithdrawal, refreshTrigg
   const [originalAmount, setOriginalAmount] = useState(0)
 
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      setWithdrawals(getWithdrawals())
+    const loadData = async () => {
+      const withdrawalsData = await getWithdrawals()
+      const entriesData = await getEntries()
+      setWithdrawals(withdrawalsData)
 
-      const entries = getEntries()
-
-      const depositTransactions: BackSafeTransaction[] = entries
+      const depositTransactions: BackSafeTransaction[] = entriesData
         .filter((e) => e.toBackSafe > 0)
         .map((e) => ({
           id: `deposit-${e.id}`,
@@ -69,7 +76,7 @@ export function BackSafeWithdrawalSection({ balances, onWithdrawal, refreshTrigg
           createdAt: e.createdAt,
         }))
 
-      const withdrawalTransactions: BackSafeTransaction[] = getWithdrawals().map((w) => ({
+      const withdrawalTransactions: BackSafeTransaction[] = withdrawalsData.map((w) => ({
         id: `withdrawal-${w.id}`,
         date: w.date,
         amount: w.amount,
@@ -86,6 +93,8 @@ export function BackSafeWithdrawalSection({ balances, onWithdrawal, refreshTrigg
       setTransactions(allTransactions)
       setIsLoaded(true)
     }
+
+    loadData()
   }, [refreshTrigger])
 
   const formatCurrency = (amount: number) => {
@@ -102,7 +111,7 @@ export function BackSafeWithdrawalSection({ balances, onWithdrawal, refreshTrigg
     })
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
     const amountNum = Number.parseFloat(amount) || 0
@@ -120,19 +129,20 @@ export function BackSafeWithdrawalSection({ balances, onWithdrawal, refreshTrigg
       createdAt: new Date().toISOString(),
     }
 
-    saveWithdrawal(withdrawal)
+    await saveWithdrawal(withdrawal)
 
     const newBalances: SafeBalances = {
       ...balances,
       backSafe: balances.backSafe - amountNum,
       lastUpdated: new Date().toISOString(),
     }
-    saveBalances(newBalances)
+    await saveBalances(newBalances)
 
     setAmount("")
     setReason("")
     setIsOpen(false)
-    setWithdrawals(getWithdrawals())
+    const updated = await getWithdrawals()
+    setWithdrawals(updated)
     onWithdrawal()
   }
 
@@ -147,7 +157,7 @@ export function BackSafeWithdrawalSection({ balances, onWithdrawal, refreshTrigg
     }
   }
 
-  const handleEditSubmit = (e: React.FormEvent) => {
+  const handleEditSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!editingWithdrawal) return
 
@@ -159,20 +169,14 @@ export function BackSafeWithdrawalSection({ balances, onWithdrawal, refreshTrigg
       return
     }
 
-    const updatedWithdrawal: BackSafeWithdrawal = {
-      ...editingWithdrawal,
-      amount: newAmount,
-      reason: editReason,
-    }
-
-    saveWithdrawal(updatedWithdrawal)
+    await updateWithdrawal(editingWithdrawal.id, newAmount, editReason)
 
     const newBalances: SafeBalances = {
       ...balances,
       backSafe: balances.backSafe - amountDifference,
       lastUpdated: new Date().toISOString(),
     }
-    saveBalances(newBalances)
+    await saveBalances(newBalances)
 
     setIsEditOpen(false)
     setEditingWithdrawal(null)
@@ -181,19 +185,19 @@ export function BackSafeWithdrawalSection({ balances, onWithdrawal, refreshTrigg
     onWithdrawal()
   }
 
-  const handleDelete = () => {
+  const handleDelete = async () => {
     if (!deleteId) return
 
     const withdrawal = withdrawals.find((w) => w.id === deleteId)
     if (withdrawal) {
-      deleteWithdrawal(deleteId)
+      await deleteWithdrawal(deleteId)
 
       const newBalances: SafeBalances = {
         ...balances,
         backSafe: balances.backSafe + withdrawal.amount,
         lastUpdated: new Date().toISOString(),
       }
-      saveBalances(newBalances)
+      await saveBalances(newBalances)
 
       setDeleteId(null)
       onWithdrawal()

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -32,11 +32,11 @@ import type { DailyEntry } from "@/lib/types"
 import { getEntries, deleteEntry, approveEntry, removeApproval } from "@/lib/cash-store"
 
 interface ReconciliationHistoryProps {
-  onEdit: (entry: DailyEntry) => void
   refreshTrigger: number
+  onEdit?: (entry: DailyEntry) => void
 }
 
-export function ReconciliationHistory({ onEdit, refreshTrigger }: ReconciliationHistoryProps) {
+export function ReconciliationHistory({ refreshTrigger, onEdit }: ReconciliationHistoryProps) {
   const [entries, setEntries] = useState<DailyEntry[]>([])
   const [isLoaded, setIsLoaded] = useState(false)
   const [showAll, setShowAll] = useState(false)
@@ -45,11 +45,18 @@ export function ReconciliationHistory({ onEdit, refreshTrigger }: Reconciliation
   const [entryToApprove, setEntryToApprove] = useState<DailyEntry | null>(null)
   const [approvalNote, setApprovalNote] = useState("")
 
-  if ((!isLoaded || lastRefresh !== refreshTrigger) && typeof window !== "undefined") {
-    setEntries(getEntries())
-    setIsLoaded(true)
-    setLastRefresh(refreshTrigger)
-  }
+  useEffect(() => {
+    const loadEntries = async () => {
+      const data = await getEntries()
+      setEntries(data)
+      setIsLoaded(true)
+      setLastRefresh(refreshTrigger)
+    }
+
+    if (!isLoaded || lastRefresh !== refreshTrigger) {
+      loadEntries()
+    }
+  }, [refreshTrigger, isLoaded, lastRefresh])
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat("en-US", {
@@ -66,10 +73,11 @@ export function ReconciliationHistory({ onEdit, refreshTrigger }: Reconciliation
     })
   }
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (confirm("Are you sure you want to delete this entry?")) {
-      deleteEntry(id)
-      setEntries(getEntries())
+      await deleteEntry(id)
+      const updated = await getEntries()
+      setEntries(updated)
     }
   }
 
@@ -79,20 +87,22 @@ export function ReconciliationHistory({ onEdit, refreshTrigger }: Reconciliation
     setApprovalDialogOpen(true)
   }
 
-  const handleApproveSubmit = () => {
+  const handleApproveSubmit = async () => {
     if (entryToApprove && approvalNote.trim()) {
-      approveEntry(entryToApprove.id, approvalNote.trim())
-      setEntries(getEntries())
+      await approveEntry(entryToApprove.id, approvalNote.trim())
+      const updated = await getEntries()
+      setEntries(updated)
       setApprovalDialogOpen(false)
       setEntryToApprove(null)
       setApprovalNote("")
     }
   }
 
-  const handleRemoveApproval = (id: string) => {
+  const handleRemoveApproval = async (id: string) => {
     if (confirm("Are you sure you want to remove the approval? The entry will show as 'Off' again.")) {
-      removeApproval(id)
-      setEntries(getEntries())
+      await removeApproval(id)
+      const updated = await getEntries()
+      setEntries(updated)
     }
   }
 
@@ -241,15 +251,17 @@ export function ReconciliationHistory({ onEdit, refreshTrigger }: Reconciliation
                                 </Tooltip>
                               </TooltipProvider>
                             )}
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => onEdit(entry)}
-                              className="h-8 w-8 hover:bg-primary/10 hover:text-primary"
-                            >
-                              <Edit className="h-4 w-4" />
-                              <span className="sr-only">Edit entry</span>
-                            </Button>
+                            {onEdit && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => onEdit(entry)}
+                                className="h-8 w-8 hover:bg-primary/10 hover:text-primary"
+                              >
+                                <Edit className="h-4 w-4" />
+                                <span className="sr-only">Edit entry</span>
+                              </Button>
+                            )}
                             <Button
                               variant="ghost"
                               size="icon"

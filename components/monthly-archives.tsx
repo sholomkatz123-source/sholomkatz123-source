@@ -40,10 +40,14 @@ export function MonthlyArchives({ refreshTrigger, onRefresh }: MonthlyArchivesPr
   const [monthToClose, setMonthToClose] = useState<string>("")
 
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      setArchives(getArchives())
-      setAvailableMonths(getAvailableMonths())
+    const loadData = async () => {
+      const archivesData = await getArchives()
+      const monthsData = await getAvailableMonths()
+      setArchives(archivesData)
+      setAvailableMonths(monthsData)
     }
+
+    loadData()
   }, [refreshTrigger])
 
   const formatCurrency = (amount: number) => {
@@ -69,15 +73,14 @@ export function MonthlyArchives({ refreshTrigger, onRefresh }: MonthlyArchivesPr
 
   const currentMonth = getCurrentMonth()
 
-  const handleViewMonth = (month: string) => {
+  const handleViewMonth = async (month: string) => {
     const archive = archives.find((a) => a.month === month)
     if (archive) {
       setViewingArchive(archive)
     } else {
-      // Create a temporary view for current/unclosed month
-      const entries = getEntriesForMonth(month)
-      const withdrawals = getWithdrawalsForMonth(month)
-      const startingBalances = getMonthStartingBalances(month)
+      const entries = await getEntriesForMonth(month)
+      const withdrawals = await getWithdrawalsForMonth(month)
+      const startingBalances = await getMonthStartingBalances(month)
 
       const lastEntry = entries.length > 0 ? entries[0] : null
 
@@ -86,7 +89,7 @@ export function MonthlyArchives({ refreshTrigger, onRefresh }: MonthlyArchivesPr
         startingFrontSafe: startingBalances.frontSafe,
         startingBackSafe: startingBalances.backSafe,
         endingFrontSafe: lastEntry?.leftInFront ?? startingBalances.frontSafe,
-        endingBackSafe: 0, // Will be calculated from current balances
+        endingBackSafe: 0,
         entries,
         withdrawals,
         isClosed: false,
@@ -95,12 +98,13 @@ export function MonthlyArchives({ refreshTrigger, onRefresh }: MonthlyArchivesPr
     setSelectedMonth(month)
   }
 
-  const handleCloseMonth = () => {
+  const handleCloseMonth = async () => {
     if (!monthToClose) return
 
-    const result = closeMonth(monthToClose)
+    const result = await closeMonth(monthToClose)
     if (result) {
-      setArchives(getArchives())
+      const updatedArchives = await getArchives()
+      setArchives(updatedArchives)
       setIsCloseDialogOpen(false)
       setMonthToClose("")
       onRefresh()
